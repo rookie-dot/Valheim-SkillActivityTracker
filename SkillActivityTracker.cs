@@ -40,10 +40,7 @@ public class SkillActivityTracker : BaseUnityPlugin
 
     private void Update()
     {
-        // Animacja UI co klatkę
         SkillActivityTrackerUI.AnimateUI();
-        
-        // Sprawdzenie wygaśnięcia skillów
         SkillActivityTrackerLogger.CheckExpiredSkills();
     }
 }

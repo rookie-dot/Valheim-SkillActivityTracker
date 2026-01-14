@@ -10,15 +10,21 @@ public static class SkillActivityTrackerUI
     private static GameObject canvasObject;
     private static List<SkillUI> skillUIs = new List<SkillUI>();
     private const int MaxSkills = 5;
+    private static bool isDragging = false;
+    private static Vector2 dragOffset;
+    private static string currentCharacterName = "";
+    private static Vector2 basePosition = new Vector2(-20, 60);
 
     public class SkillUI
     {
         public GameObject root;
         public Text skillText;
         public Image backgroundImage;
-        public float currentLevel; // Current skill level
-        public string localizedName; // Localized name
-        public Skills.SkillType? skillType; // Skill type
+        public Image progressBar;
+        public float currentLevel;
+        public string localizedName;
+        public Skills.SkillType? skillType;
+        public Vector2 targetPosition;
     }
 
     public static void CreateUI()
@@ -28,7 +34,7 @@ public static class SkillActivityTrackerUI
         canvasObject = new GameObject("SkillTrackerCanvas");
         Canvas canvas = canvasObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100; // Wysoki priorytet renderowania
+        canvas.sortingOrder = 100;
         canvasObject.AddComponent<CanvasScaler>();
         canvasObject.AddComponent<GraphicRaycaster>();
         UnityEngine.Object.DontDestroyOnLoad(canvasObject);
@@ -46,25 +52,25 @@ public static class SkillActivityTrackerUI
             
             sUI.root = new GameObject("SkillUI" + i);
             sUI.root.transform.SetParent(canvasObject.transform, false);
-            sUI.root.SetActive(false); // Hidden until skill is used
+            sUI.root.SetActive(false);
 
             RectTransform rtRoot = sUI.root.AddComponent<RectTransform>();
-            // Position on right side of screen, middle vertically
             rtRoot.anchorMin = new Vector2(1, 0.5f);
             rtRoot.anchorMax = new Vector2(1, 0.5f);
             rtRoot.pivot = new Vector2(1, 0.5f);
-            rtRoot.anchoredPosition = new Vector2(-20, 60 - i * 30); // 30px spacing between elements
-            rtRoot.sizeDelta = new Vector2(235, 26); // Increased by 20%
+            rtRoot.anchoredPosition = new Vector2(basePosition.x, basePosition.y - i * 30);
+            rtRoot.sizeDelta = new Vector2(235, 26);
+            
+            sUI.targetPosition = new Vector2(basePosition.x, basePosition.y - i * 30);
 
-            // Caramel yellow gradient background (like in Valheim)
+            // Background
             GameObject bgObj = new GameObject("Background");
             bgObj.transform.SetParent(sUI.root.transform, false);
             sUI.backgroundImage = bgObj.AddComponent<Image>();
             
-            // Create gradient texture - caramel yellow colors
             Texture2D gradientTexture = new Texture2D(1, 2);
-            gradientTexture.SetPixel(0, 0, new Color(0.85f, 0.6f, 0.2f, 0.95f)); // Dark caramel at bottom
-            gradientTexture.SetPixel(0, 1, new Color(1f, 0.85f, 0.4f, 0.95f));  // Light caramel at top
+            gradientTexture.SetPixel(0, 0, new Color(0.85f, 0.6f, 0.2f, 0.95f));
+            gradientTexture.SetPixel(0, 1, new Color(1f, 0.85f, 0.4f, 0.95f));
             gradientTexture.Apply();
             
             sUI.backgroundImage.sprite = Sprite.Create(
@@ -78,6 +84,30 @@ public static class SkillActivityTrackerUI
             bgRt.anchorMax = Vector2.one;
             bgRt.offsetMin = Vector2.zero;
             bgRt.offsetMax = Vector2.zero;
+
+            // Progress bar
+            GameObject progressObj = new GameObject("ProgressBar");
+            progressObj.transform.SetParent(sUI.root.transform, false);
+            sUI.progressBar = progressObj.AddComponent<Image>();
+            
+            // Create gradient texture for progress bar - orange gradient
+            Texture2D progressGradient = new Texture2D(1, 2);
+            progressGradient.SetPixel(0, 0, new Color(0.9f, 0.4f, 0f, 0.8f));
+            progressGradient.SetPixel(0, 1, new Color(1f, 0.6f, 0.1f, 0.8f));
+            progressGradient.Apply();
+            
+            sUI.progressBar.sprite = Sprite.Create(
+                progressGradient,
+                new Rect(0, 0, 1, 2),
+                new Vector2(0.5f, 0.5f)
+            );
+            
+            RectTransform progressRt = progressObj.GetComponent<RectTransform>();
+            progressRt.anchorMin = new Vector2(0, 0);
+            progressRt.anchorMax = new Vector2(0, 1);
+            progressRt.pivot = new Vector2(0, 0.5f);
+            progressRt.anchoredPosition = Vector2.zero;
+            progressRt.sizeDelta = new Vector2(0, 0);
 
             // Text with name, level and percentage
             GameObject textObj = new GameObject("SkillText");
@@ -104,7 +134,6 @@ public static class SkillActivityTrackerUI
         }
     }
 
-    // UpdateUI - called after each skill change
     public static void UpdateUI(List<SkillActivityTrackerLogger.TrackedSkill> skills)
     {
         for (int i = 0; i < skillUIs.Count; i++)
@@ -113,21 +142,24 @@ public static class SkillActivityTrackerUI
             {
                 var s = skills[i];
                 int wholeLevel = (int)s.Level;
-                
-                // Use calculated percentage
                 float percentFloat = s.PercentProgress;
 
-                // Use localized name or fallback to enum name
                 string localizedName = !string.IsNullOrEmpty(s.LocalizedName) ? s.LocalizedName : s.Skill.ToString();
                 
-                // Save data in SkillUI
                 skillUIs[i].currentLevel = s.Level;
                 skillUIs[i].localizedName = localizedName;
                 skillUIs[i].skillType = s.Skill;
                 
-                // Update text
-                string displayText = $"{localizedName} {wholeLevel}      ({percentFloat:F2}%)";
+                string displayText = $"{localizedName}  •  {wholeLevel}  •  ({percentFloat:F2}%)";
                 skillUIs[i].skillText.text = displayText;
+                
+                // Update progress bar
+                RectTransform progressRt = skillUIs[i].progressBar.GetComponent<RectTransform>();
+                float barWidth = (percentFloat / 100f) * 235f;
+                progressRt.sizeDelta = new Vector2(barWidth, 0);
+                
+                // Set target position
+                skillUIs[i].targetPosition = new Vector2(basePosition.x, basePosition.y - i * 30);
                 
                 skillUIs[i].root.SetActive(true);
             }
@@ -138,36 +170,135 @@ public static class SkillActivityTrackerUI
         }
     }
 
-    // Smooth bar animation - called in Update() every frame
     public static void AnimateUI()
     {
-        // Get current player (only to check if exists)
         Player localPlayer = Player.m_localPlayer;
         if (localPlayer == null || localPlayer.GetSkills() == null)
             return;
+        
+        string playerName = localPlayer.GetPlayerName();
+        if (playerName != currentCharacterName)
+        {
+            currentCharacterName = playerName;
+            LoadCharacterPosition();
+        }
 
-        // Get current skills from logger - they have correct values from SkillsPatch
+        HandleDragging();
+
         var currentSkills = SkillActivityTrackerLogger.GetTrackedSkills();
         
         foreach (var sUI in skillUIs)
         {
             if (!sUI.root.activeSelf) continue;
             
-            // Find current skill in list
+            // Smoothly animate position
+            RectTransform rt = sUI.root.GetComponent<RectTransform>();
+            rt.anchoredPosition = Vector2.Lerp(rt.anchoredPosition, sUI.targetPosition, Time.deltaTime * 8f);
+            
             var trackedSkill = currentSkills.FirstOrDefault(s => s.Skill == sUI.skillType);
             if (trackedSkill != null)
             {
-                // Use values from TrackedSkill - it's updated correctly in SkillsPatch
                 sUI.currentLevel = trackedSkill.Level;
                 sUI.localizedName = trackedSkill.LocalizedName ?? sUI.localizedName;
                 
                 int wholeLevel = (int)sUI.currentLevel;
-                float percentFloat = trackedSkill.PercentProgress; // Calculated percentage 0-100
+                float percentFloat = trackedSkill.PercentProgress;
                 
-                // Update text dynamically
-                string displayText = $"{sUI.localizedName} {wholeLevel}      ({percentFloat:F2}%)";
+                string displayText = $"{sUI.localizedName}  •  {wholeLevel}  •  ({percentFloat:F2}%)";
                 sUI.skillText.text = displayText;
+                
+                // Animate progress bar
+                RectTransform progressRt = sUI.progressBar.GetComponent<RectTransform>();
+                float targetWidth = (percentFloat / 100f) * 235f;
+                float currentWidth = progressRt.sizeDelta.x;
+                float newWidth = Mathf.Lerp(currentWidth, targetWidth, Time.deltaTime * 5f);
+                progressRt.sizeDelta = new Vector2(newWidth, 0);
             }
         }
+    }
+    
+    private static void HandleDragging()
+    {
+        if (canvasObject == null || skillUIs.Count == 0) return;
+        
+        bool leftMouseButton = UnityEngine.Input.GetMouseButton(0);
+        bool leftMouseButtonDown = UnityEngine.Input.GetMouseButtonDown(0);
+        bool leftMouseButtonUp = UnityEngine.Input.GetMouseButtonUp(0);
+        
+        if (leftMouseButtonDown && !isDragging)
+        {
+            Vector2 mousePos = UnityEngine.Input.mousePosition;
+            foreach (var sUI in skillUIs)
+            {
+                if (!sUI.root.activeSelf) continue;
+                
+                RectTransform rt = sUI.root.GetComponent<RectTransform>();
+                if (RectTransformUtility.RectangleContainsScreenPoint(rt, mousePos, null))
+                {
+                    isDragging = true;
+                    RectTransform firstRT = skillUIs[0].root.GetComponent<RectTransform>();
+                    Vector2 localPoint;
+                    RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                        canvasObject.GetComponent<RectTransform>(),
+                        mousePos,
+                        null,
+                        out localPoint
+                    );
+                    dragOffset = firstRT.anchoredPosition - localPoint;
+                    break;
+                }
+            }
+        }
+        
+        if (isDragging && leftMouseButton)
+        {
+            Vector2 mousePos = UnityEngine.Input.mousePosition;
+            Vector2 localPoint;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                canvasObject.GetComponent<RectTransform>(),
+                mousePos,
+                null,
+                out localPoint
+            );
+            
+            Vector2 newPos = localPoint + dragOffset;
+            basePosition = newPos;
+            
+            for (int i = 0; i < skillUIs.Count; i++)
+            {
+                Vector2 pos = new Vector2(newPos.x, newPos.y - i * 30);
+                RectTransform rt = skillUIs[i].root.GetComponent<RectTransform>();
+                rt.anchoredPosition = pos;
+                skillUIs[i].targetPosition = pos;
+            }
+        }
+        
+        if (isDragging && leftMouseButtonUp)
+        {
+            isDragging = false;
+            SaveCharacterPosition();
+        }
+    }
+    
+    private static void LoadCharacterPosition()
+    {
+        if (string.IsNullOrEmpty(currentCharacterName)) return;
+        
+        basePosition = SkillActivityTrackerConfig.GetCharacterUIPosition(currentCharacterName);
+        
+        for (int i = 0; i < skillUIs.Count; i++)
+        {
+            Vector2 newPos = new Vector2(basePosition.x, basePosition.y - i * 30);
+            RectTransform rt = skillUIs[i].root.GetComponent<RectTransform>();
+            rt.anchoredPosition = newPos;
+            skillUIs[i].targetPosition = newPos;
+        }
+    }
+    
+    private static void SaveCharacterPosition()
+    {
+        if (string.IsNullOrEmpty(currentCharacterName)) return;
+        
+        SkillActivityTrackerConfig.SetCharacterUIPosition(currentCharacterName, basePosition);
     }
 }
